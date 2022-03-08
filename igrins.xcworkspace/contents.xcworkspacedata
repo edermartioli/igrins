@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:igrins_extract_spectra.py">
+   </FileRef>
+   <FileRef
+      location = "group:igrins_ccf_pipeline.py">
+   </FileRef>
+   <FileRef
+      location = "group:ccf_lib.py">
+   </FileRef>
+   <FileRef
+      location = "group:igrins_template.py">
+   </FileRef>
+   <FileRef
+      location = "group:igrins_telluric_correction.py">
+   </FileRef>
+   <FileRef
+      location = "group:igrins_telluric_model.py">
+   </FileRef>
+   <FileRef
+      location = "group:telluric_lib.py">
+   </FileRef>
+   <FileRef
+      location = "group:igrinslib.py">
+   </FileRef>
+   <FileRef
+      location = "group:reduc_lib.py">
+   </FileRef>
+   <FileRef
+      location = "group:log_igrins.py">
+   </FileRef>
+</Workspace>
