@@ -27,7 +27,8 @@ import warnings
 from astropy.time import Time
 from collections import Counter
 from astropy.io import ascii
-import gp_lib
+#import gp_lib
+NORDERS = 54
 
 from astropy.convolution import Gaussian2DKernel, interpolate_replace_nans
 
@@ -107,7 +108,7 @@ def get_object_rv(ccf_files,
     #         gaussfit --> fits a gaussian to the mean CCF
     #
     # if you want to force a weight onto orders rather than let the program decide automatically, then provide a
-    # value for weight_table (e.g., weigth_table = "my_weights.csv". It must have 49 rows, one column name
+    # value for weight_table (e.g., weigth_table = "my_weights.csv". It must have NORDERS rows, one column name
     # "WEIGHT" (all capitals) and be read as a proper numpy.table file
     #
 
@@ -118,14 +119,14 @@ def get_object_rv(ccf_files,
         dict_ccf = dict()
     
     object, mask, sanit, drs_version = collection_key.split("__")
-
+ 
     outdir = os.path.dirname(ccf_files[0])
     
     if verbose :
         print("Saving products in directory:{}".format(outdir))
 
     # add excluded orders based on the bandpass
-    exclude_orders = set_exclude_orders_by_bandpass(exclude_orders, ccf_files[0], bandpass)
+    #exclude_orders = set_exclude_orders_by_bandpass(exclude_orders, ccf_files[0], bandpass)
 
     #if do_blacklist:
     #    ccf_files = check_blacklist(ccf_files)
@@ -137,14 +138,14 @@ def get_object_rv(ccf_files,
     ccf_cube, ccf_tbl, ccf_RV = build_ccf_cube(ccf_files, batch_name, exclude_orders=exclude_orders, save_ccf_cube=save_ccf_cube, verbose=verbose, fpccf=fpccf)
 
     # keywords from file headers to be added to the CSV table.
-    keywords = ['MJDATE','BERV','BJD','RV_DRIFT','ERVDRIFT','EXTSN035','AIRMASS','TLPEH2O','TLPEOTR','RV_WAVFP','RV_SIMFP','DATE','MJDMID','DATE-OBS','EXPTIME','EXPNUM','MJDEND','SBCDEN_P','EXPTYPE','FILENAME','FIBER','WAVETIME']
+    keywords = ['MJDATE','BERV','BJD','RV_DRIFT','ERVDRIFT','SNR','AIRMASS','TLPEH2O','TLPEOTR','RV_WAVFP','RV_SIMFP','DATE','MJDMID','DATE-OBS','EXPTIME','EXPNUM','MJDEND','SBCDEN_P','EXPTYPE','FILENAME','FIBER','WAVETIME']
     # set output csv table
     tbl = set_output_table(ccf_files, keywords)
 
     # we apply the SNR threshold
-    tbl, ccf_cube, ccf_files = apply_snr_threshold(tbl, ccf_cube, ccf_files, snr_key='EXTSN035',snr_min=snr_min)
+    tbl, ccf_cube, ccf_files = apply_snr_threshold(tbl, ccf_cube, ccf_files, snr_key='SNR',snr_min=snr_min)
 
-    # calculate the median CCF for all epochs for 49 orders
+    # calculate the median CCF for all epochs for NORDERS orders
     with warnings.catch_warnings(record=True) as _:
         # some slices in the sum are NaNs, that's OK
         med_ccf = np.nanmedian(ccf_cube , axis = 2)
@@ -153,7 +154,7 @@ def get_object_rv(ccf_files,
     exclude_orders = exclude_orders_full_of_nans(exclude_orders, med_ccf, verbose=verbose)
 
     # exclude orders with measured RVs offset by more than a pre-defined threshold
-    exclude_orders = exclude_orders_with_large_rv_offsets(exclude_orders, med_ccf, ccf_RV, dvmax_per_order, verbose=verbose)
+    #exclude_orders = exclude_orders_with_large_rv_offsets(exclude_orders, med_ccf, ccf_RV, dvmax_per_order, verbose=verbose)
 
     # set updated excluded orders values in ccf_cube to NaN
     ccf_cube[exclude_orders, :, :] = np.nan
@@ -232,7 +233,8 @@ def get_object_rv(ccf_files,
 
     # output to csv file
     if save_csv_table_of_results :
-        tbl.write('{0}.csv'.format(batch_name),overwrite = True)
+        output_tbl = '{0}.csv'.format(batch_name)
+        tbl.write(output_tbl,overwrite = True)
 
     if fpccf :
         if save_rdb_timeseries :
@@ -344,7 +346,7 @@ def fits2wave(file_or_header):
     elif 'TH_ORD_N' in hdr.keys() :
         nord = hdr['TH_ORD_N']
     else :
-        nord = 49
+        nord = NORDERS
 
     # get the per-order wavelength solution
     wave_poly = wave_poly.reshape(nord, len(wave_poly) // nord)
@@ -441,7 +443,7 @@ def set_exclude_orders_by_bandpass(exclude_orders, reffile, bandpass) :
     # get typical wavelength solution from first file and central wavelength grid per order
     wave_middle = np.nanmean(fits2wave(fits.getheader(reffile, ext=1)), axis=1)
     
-    keep_orders = np.zeros(49)
+    keep_orders = np.zeros(NORDERS)
     if 'Y' in bandpass:
         keep_orders[(wave_middle>938)*(wave_middle<1113)] = True
     if 'J' in bandpass:
@@ -451,7 +453,7 @@ def set_exclude_orders_by_bandpass(exclude_orders, reffile, bandpass) :
     if 'K' in bandpass:
         keep_orders[(wave_middle>1957)*(wave_middle<2500)] = True
 
-    for i in range(49):
+    for i in range(NORDERS):
         if i in exclude_orders:
             keep_orders[i] = False
 
@@ -542,10 +544,10 @@ def build_ccf_cube(ccf_files,
             # if this is the first file, we create a cube that contains all
             # CCFs for all orders for all files
             if i == 0:
-                ccf_cube = np.zeros([49, len(ccf_tbl), len(ccf_files)])+np.nan
+                ccf_cube = np.zeros([NORDERS, len(ccf_tbl), len(ccf_files)])+np.nan
 
             # we input the CCFs in the CCF cube
-            for j in range(49):
+            for j in range(NORDERS):
                 tmp = ccf_tbl['ORDER'+str(j).zfill(2)]
 
                 if fpccf :
@@ -571,7 +573,7 @@ def build_ccf_cube(ccf_files,
         ccf_tbl = fits.getdata(ccf_files[0])
         ccf_RV = ccf_tbl['RV']
 
-    for j in range(49):
+    for j in range(NORDERS):
         # if we need to exlude orders, we do it here.
         if j in exclude_orders:
             ccf_cube[j, :, :] = np.nan
@@ -581,7 +583,7 @@ def build_ccf_cube(ccf_files,
 
 def exclude_orders_full_of_nans(exclude_orders, med_ccf, verbose=False) :
     
-    for iord in range(49):
+    for iord in range(NORDERS):
         if iord not in exclude_orders:
             if not np.isfinite(np.mean(med_ccf[iord,:])):
                 if verbose :
@@ -600,7 +602,7 @@ def exclude_orders_with_large_rv_offsets(exclude_orders, med_ccf, ccf_RV, dvmax_
     dv_CCF_min = (ccf_RV[np.argmin(med_ccf,axis = 1)] - ccf_RV[id_min])
     bad_orders = dvmax_per_order < np.abs(dv_CCF_min)
 
-    for iord in range(49):
+    for iord in range(NORDERS):
         if iord not in exclude_orders:
             if bad_orders[iord]:
                 if verbose :
@@ -648,7 +650,7 @@ def measure_ccf_weights(
         # weights = 1/np.nanmedian(DVRMS_CC, axis=1)**2
         # weights[np.isfinite(weights) == False] = 0
 
-        # for iord in range(49):
+        # for iord in range(NORDERS):
         #     if iord in exclude_orders:
         #         weights[iord] = 0
 
@@ -656,7 +658,7 @@ def measure_ccf_weights(
     else:
         if weight_table == "" or (not os.path.isfile(weight_table)):
             # now we find the RMS of the Nth spectrum relative to the median
-            rms = np.zeros([len(ccf_files), 49])
+            rms = np.zeros([len(ccf_files), NORDERS])
 
             for iter in range(5) :
                 for i in range(len(ccf_files)):
@@ -678,7 +680,7 @@ def measure_ccf_weights(
                 #for i in range(len(ccf_files)) :
                 #   rms_in_time =
                 # Exclude order if number of valid files is less than two thirds of initial sample
-                for order in range(49) :
+                for order in range(NORDERS) :
                     order_rms = np.array(rms[:,order])
                     nonzeroo = order_rms != 0
                     nonzeroo &= np.isfinite(order_rms)
@@ -687,7 +689,7 @@ def measure_ccf_weights(
                         rms[:, order] = 0.
                 
                 # First check if spectra is good compared to overall data:
-                for order in range(49) :
+                for order in range(NORDERS) :
                     for i in range(len(ccf_files)) :
                         if ~np.isfinite(rms[i,order]) or rms[i,order] == 0:
                             ccf_cube[order,:,i] = np.nan
@@ -744,7 +746,7 @@ def measure_ccf_weights(
                     plt.show()
 
             tbl_weights = Table()
-            tbl_weights['order'] = np.arange(49)
+            tbl_weights['order'] = np.arange(NORDERS)
             tbl_weights['weights'] = weights
             tbl_weights['ccf_depth'] = ccf_depth
             tbl_weights['ccf_Q'] = ccf_Q
@@ -766,7 +768,7 @@ def measure_ccf_weights(
 def apply_weights_to_ccf(ccf_cube, weights) :
     
     ccf_cube_norm = np.zeros_like(ccf_cube)
-    for i in range(49):
+    for i in range(NORDERS):
         if np.isfinite(weights[i]):
             ccf_cube_norm[i, :, :] = (ccf_cube[i,:,:] * weights[i])
 
@@ -795,7 +797,7 @@ def plot_weighted_mean_ccfs(ccf_files, ccf_RV, mean_ccf, batch_name, saveplots=F
 
 def plot_median_ccfs_and_residuals(ccf_cube, med_ccf, ccf_RV, batch_name, saveplots=False, showplots=False) :
     
-    plt.imshow(med_ccf, aspect = 'auto',vmin = 0.8,vmax= 1.05,extent = [np.min(ccf_RV),np.max(ccf_RV),49,0])
+    plt.imshow(med_ccf, aspect = 'auto',vmin = 0.8,vmax= 1.05,extent = [np.min(ccf_RV),np.max(ccf_RV),NORDERS,0])
     plt.xlabel('Velocity bin [km/s] ',fontsize=16)
     plt.ylabel('Nth order',fontsize=16)
     plt.title('Median CCF',fontsize=16)
@@ -806,7 +808,7 @@ def plot_median_ccfs_and_residuals(ccf_cube, med_ccf, ccf_RV, batch_name, savepl
     if showplots :
         plt.show()
 
-    plt.imshow(ccf_cube[:,:,0]-med_ccf,aspect = 'auto',vmin = -0.1,vmax= 0.1,extent = [np.min(ccf_RV),np.max(ccf_RV),49,0])
+    plt.imshow(ccf_cube[:,:,0]-med_ccf,aspect = 'auto',vmin = -0.1,vmax= 0.1,extent = [np.min(ccf_RV),np.max(ccf_RV),NORDERS,0])
     plt.xlabel('Velocity bin [km/s]',fontsize=16)
     plt.ylabel('Nth order',fontsize=16)
     plt.title('Sample residual CCF map',fontsize=16)
@@ -820,7 +822,7 @@ def plot_median_ccfs_and_residuals(ccf_cube, med_ccf, ccf_RV, batch_name, savepl
 
 def plot_snr(tbl, batch_name, saveplots=False, showplots=False) :
 
-    plt.plot(tbl['MJDATE'], tbl['EXTSN035'], 'g.')
+    plt.plot(tbl['MJDATE'], tbl['SNR'], 'g.')
     plt.xlabel('MJDATE',fontsize=16)
     plt.ylabel('SNR for order 35\n(around 1.6 $\mu$m)',fontsize=16)
     plt.title('Signal-to-noise ratio',fontsize=16)
@@ -947,7 +949,7 @@ def run_gp_gaussian_method(tbl, ccf_files, ccf_RV, mean_ccf, med_corr_ccf) :
     for i in range(len(ccf_files)):
         for iter in range(10) :
             try :
-                fit, err = gp_lib.fit_gaussian_profile(ccf_RV, mean_ccf[:,i], ccf_errors, burnin=100, nsamples=500, plot=False, verbose=False)
+                #fit, err = gp_lib.fit_gaussian_profile(ccf_RV, mean_ccf[:,i], ccf_errors, burnin=100, nsamples=500, plot=False, verbose=False)
                 break
             except :
                 print("file={} iter={} : GP Gaussian fit failed, trying again ...".format(i, iter))

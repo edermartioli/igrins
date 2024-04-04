@@ -20,6 +20,7 @@ from astropy.io.fits.verify import VerifyWarning
 import warnings
 from scipy import constants
 import glob
+NORDERS = 54
 
 helpstr = """
 ----------------------------------------------------------------------------
@@ -95,12 +96,12 @@ def set_ccf_params(maskfile, telluric_masks=[], science_channel=True) :
         # These values are taken from the constants file
         loc["MASK_WIDTH"] = 1.7                   # CCF_MASK_WIDTH
         loc["MASK_MIN_WEIGHT"] = 0.0              # CCF_MASK_MIN_WEIGHT
-        loc["CCF_STEP"] = 0.5                     # CCF_DEFAULT_STEP (or user input)
+        loc["CCF_STEP"] = 0.25                     # CCF_DEFAULT_STEP (or user input)
         #loc["CCF_WIDTH"] = 300                    # CCF_DEFAULT_WIDTH (or user input)
         loc["CCF_WIDTH"] = 100                     # CCF_DEFAULT_WIDTH (or user input)
         #loc["CCF_WIDTH"] = 60                     # CCF_DEFAULT_WIDTH (or user input)
         loc["CCF_RV_NULL"] = -9999.99             # CCF_OBJRV_NULL_VAL
-        loc["CCF_N_ORD_MAX"] = 48                 # CCF_N_ORD_MAX
+        loc["CCF_N_ORD_MAX"] = NORDERS                 # CCF_N_ORD_MAX
         loc["BLAZE_NORM_PERCENTILE"] = 90         # CCF_BLAZE_NORM_PERCENTILE
         loc["BLAZE_THRESHOLD"] = 0.3              # WAVE_FP_BLAZE_THRES
         loc["IMAGE_PIXEL_SIZE"] = 2.28            # IMAGE_PIXEL_SIZE
@@ -118,7 +119,7 @@ def set_ccf_params(maskfile, telluric_masks=[], science_channel=True) :
         loc["CCF_STEP"] = 0.25                     # WAVE_CCF_STEP
         loc["CCF_WIDTH"] = 6.5                    # WAVE_CCF_WIDTH
         loc["CCF_RV_NULL"] = -9999.99             # CCF_OBJRV_NULL_VAL
-        loc["CCF_N_ORD_MAX"] = 48                 # WAVE_CCF_N_ORD_MAX
+        loc["CCF_N_ORD_MAX"] = NORDERS                 # WAVE_CCF_N_ORD_MAX
         loc["BLAZE_NORM_PERCENTILE"] = 90         # CCF_BLAZE_NORM_PERCENTILE
         loc["BLAZE_THRESHOLD"] = 0.3              # WAVE_FP_BLAZE_THRES
         loc["IMAGE_PIXEL_SIZE"] = 2.28            # IMAGE_PIXEL_SIZE
@@ -728,7 +729,7 @@ def ccf_calculation(p, wave, image, blaze, targetrv, mask_centers, mask_weights,
 
 def mean_ccf(p, props, targetrv, fit_type, valid_orders=None, normalize_ccfs=True, plot=False, verbose=False):
     
-    allorders = [i for i in range(49)]
+    allorders = [i for i in range(NORDERS)]
     
     if valid_orders == None :
         ccfs = props['CCF'][: p['CCF_N_ORD_MAX'] ]
@@ -971,6 +972,10 @@ def write_file(props, infile, maskname, header, wheader, rv_drifts, save=True, v
     table2['SNR'] = props['CCF_SNR']
     table2['NORM'] = props['CCF_NORM']
 
+   
+    header['SNR'] = (header['SNR'], 'Signal-to-noise ratio')
+    header['BJD'] = (header['BJD_mid'], 'Barycentric Julian Date')
+   
     # ----------------------------------------------------------------------
     # add to the header
     # ----------------------------------------------------------------------
@@ -1015,6 +1020,8 @@ def write_file(props, infile, maskname, header, wheader, rv_drifts, save=True, v
 
     if "MJDMID" not in wheader :
         wheader['MJDMID'] = header['MJDMID']
+
+    header['MJDATE'] = (header['MJDMID'], 'Modified Julian Date')
 
     header['RV_WAVTM'] = (wheader['MJDMID'],
                           'RV wave file time [mjd]')
@@ -1172,7 +1179,7 @@ def run_ccf_new(ccf_params, spectrum, rv_drifts, targetrv=0.0, valid_orders=None
         print(wmsg.format(fiber, wmeanref))
 
     # Uncomment below to quickly check the input spectra to CCF routines
-    #for i in range(49) :
+    #for i in range(NORDERS) :
     #    plt.plot(wave[i],image[i])
     #plt.show()
     # --------------------------------------------------------------------------
@@ -1303,7 +1310,7 @@ def apply_weights_to_ccf_mask(ccf_params, wave, fluxes, fluxerrs, weights, media
     edge_size = ccf_params["CCF_WIDTH"]
     #edge_size = 7. # +-7 km/s ~ instrumental resolution
     
-    for order in range(49) :
+    for order in range(NORDERS) :
         wl = wave[order]
         flux = fluxes[order]
         fluxerr = fluxerrs[order]

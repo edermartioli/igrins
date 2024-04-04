@@ -27,6 +27,7 @@ from astropy.io import fits
 from scipy import signal
 import scipy.interpolate as sint
 from scipy.interpolate import interp1d
+from copy import deepcopy
 
 import telluric_lib, reduc_lib
 
@@ -109,24 +110,27 @@ def load_spectrum(filename, standard=False) :
     
     hdu = fits.open(filename)
     
-    spectrum["header"] = hdu[0].header
+    spectrum["header"] = deepcopy(hdu[0].header)
     
-    spectrum["wl"] = hdu["WAVE"].data
-    spectrum["flux"] = hdu["FLUX"].data
-    spectrum["variance"] = hdu["VARIANCE"].data
+    norders = len(hdu["WAVE"].data)
+    spectrum["norders"] = norders
+        
+    spectrum["wl"] = deepcopy(hdu["WAVE"].data)
+    spectrum["flux"] = deepcopy(hdu["FLUX"].data)
+    spectrum["variance"] = deepcopy(hdu["VARIANCE"].data)
     
     if standard :
-        spectrum["SPEC_FLATTENED"] = hdu["SPEC_FLATTENED"].data
-        spectrum["FITTED_CONTINUUM"] = hdu["FITTED_CONTINUUM"].data
-        spectrum["A0V_NORM"] = hdu["A0V_NORM"].data
-        spectrum["MODEL_TELTRANS"] = hdu["MODEL_TELTRANS"].data
+        spectrum["SPEC_FLATTENED"] = deepcopy(hdu["SPEC_FLATTENED"].data)
+        spectrum["FITTED_CONTINUUM"] = deepcopy(hdu["FITTED_CONTINUUM"].data)
+        spectrum["A0V_NORM"] = deepcopy(hdu["A0V_NORM"].data)
+        spectrum["MODEL_TELTRANS"] = deepcopy(hdu["MODEL_TELTRANS"].data)
 
-    for order in range(len(orders['orders'])) :
+    for order in range(norders) :
     
         wl0, wlf = orders['wl0'][order], orders['wlf'][order]
         
-        mask = hdu["WAVE"].data[order] >= wl0
-        mask &= hdu["WAVE"].data[order] < wlf
+        mask = spectrum["wl"][order] >= wl0
+        mask &= spectrum["wl"][order] < wlf
 
         spectrum["flux"][order][~mask] = np.nan
         spectrum["variance"][order][~mask] = np.nan
@@ -136,7 +140,8 @@ def load_spectrum(filename, standard=False) :
             spectrum["FITTED_CONTINUUM"][order][~mask] = np.nan
             spectrum["A0V_NORM"][order][~mask] = np.nan
             spectrum["MODEL_TELTRANS"][order][~mask] = np.nan
-
+            
+    hdu.close()
     return spectrum
 
 
@@ -334,12 +339,12 @@ def load_spirou_s1d_template(filename, use_rms_error=True, wl1=0, wl2=1e20, to_r
     keep = np.isfinite(hdu_template[1].data['flux'])
     keep &= (hdu_template[1].data['wavelength'] > wl1) & (hdu_template[1].data['wavelength'] < wl2)
     
-    object_spectrum["wl"] = hdu_template[1].data['wavelength'][keep]
-    object_spectrum["flux"] = hdu_template[1].data['flux'][keep]
+    object_spectrum["wl"] = deepcopy(hdu_template[1].data['wavelength'][keep])
+    object_spectrum["flux"] = deepcopy(hdu_template[1].data['flux'][keep])
     if use_rms_error :
-        object_spectrum["fluxerr"] = hdu_template[1].data['rms'][keep]
+        object_spectrum["fluxerr"] = deepcopy(hdu_template[1].data['rms'][keep])
     else :
-        object_spectrum["fluxerr"] = hdu_template[1].data['eflux'][keep]
+        object_spectrum["fluxerr"] = deepcopy(hdu_template[1].data['eflux'][keep])
 
     object_spectrum["continuum"] = reduc_lib.fit_continuum(object_spectrum["wl"], object_spectrum["flux"], function=cont_function, order=order, nit=10, rej_low=1., rej_high=4., grow=1, med_filt=1, percentile_low=0., percentile_high=100.,min_points=100, xlabel="wavelength", ylabel="flux", plot_fit=plot, silent=True)
         
@@ -361,5 +366,7 @@ def load_spirou_s1d_template(filename, use_rms_error=True, wl1=0, wl2=1e20, to_r
         plt.ylabel("flux",fontsize=18)
         plt.legend(fontsize=18)
         plt.show()
-        
+    
+    hdu_template.close()
+    
     return object_spectrum

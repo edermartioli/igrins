@@ -59,6 +59,7 @@ def read_recipe_file(recipe_file) :
     
     for line in f:
         if line[0] != '#':
+            #print(line)
             cols = line.replace("\n","").split(",")
             if cols[0] != 'OBJNAME':
                 recipes['OBJNAME'].append(cols[0].replace(" ",""))
@@ -96,23 +97,26 @@ def get_wavelengths(reduced_data_dir) :
 
     waves = []
     
+    h_nords = len(fits.getdata(h_wave_files[0],0))
+    k_nords = len(fits.getdata(k_wave_files[0],0))
+
     for i in range(len(h_wave_files)) :
         
         h_data = fits.getdata(h_wave_files[i],0)
         k_data = fits.getdata(k_wave_files[i],0)
         
         if i == 0 :
-            for j in range(28) :
-                waves.append(h_data[27-j])
-            for j in range(26) :
-                waves.append(k_data[25-j])
+            for j in range(h_nords) :
+                waves.append(h_data[h_nords-1-j])
+            for j in range(k_nords) :
+                waves.append(k_data[k_nords-1-j])
         else :
-            for j in range(28) :
-                waves[j] += h_data[27-j]
-            for j in range(26) :
-                waves[j+28] += k_data[25-j]
+            for j in range(h_nords) :
+                waves[j] += h_data[h_nords-1-j]
+            for j in range(k_nords) :
+                waves[j+h_nords] += k_data[k_nords-1-j]
 
-    for order in range(54) :
+    for order in range(len(waves)) :
         waves[order] /= len(h_wave_files)
 
     return waves
@@ -272,7 +276,10 @@ def get_reduction_list(recipes, reduced_data_dir, raw_data_dir, outdir, sequence
         objtype = recipes['OBJTYPE'][i]
         objname = recipes['OBJNAME'][i]
         
-        if (objtype == 'TAR' and objname != 'SKY') and (len(recipes['OBSIDS'][i]) == sequence_length or sequence_length == 0) :
+        #print(i,objname,objtype,len(recipes['OBSIDS'][i]))
+        
+        #if (objtype == 'TAR' and objname != 'SKY') and (len(recipes['OBSIDS'][i]) == sequence_length or sequence_length == 0) :
+        if objtype == 'TAR' and objname != 'SKY' :
 
             for j in range(len(recipes['OBSIDS'][i])) :
                 
@@ -306,11 +313,11 @@ def get_reduction_list(recipes, reduced_data_dir, raw_data_dir, outdir, sequence
                     loc[objname] = []
                 loc[objname].append(pos_efiles)
                 loc[objname].append(neg_efiles)
-
+                
     return loc
 
 
-def get_profile(spec2d_data, plot=False) :
+def get_profile(spec2d_data, use_median=True, plot=False) :
 
     loc = {}
 
@@ -323,38 +330,52 @@ def get_profile(spec2d_data, plot=False) :
     for order in range(norders) :
         img = spec2d_data[order]
         with warnings.catch_warnings(record=True) as _:
-            tmp_profile = np.nanmean(img,axis=1)
+            if use_median :
+                tmp_profile = np.nanmedian(img,axis=1)
+            else :
+                tmp_profile = np.nanmean(img,axis=1)
             nans = np.isnan(tmp_profile)
             tmp_profile[nans] = 0.
             profile_orders.append(tmp_profile)
             profile += tmp_profile
 
-    diff = np.gradient(profile)
-    midrange = xpix > midpoint - 5
-    midrange &= xpix < midpoint + 5
+    # Figure out if profile is single (sky images) or doubled (ABBA dithering pattern)
+    if np.nanmean(profile[xpix > midpoint]) < 0 or np.nanmean(profile[xpix > midpoint]) < 0 :
+        diff = np.gradient(profile)
+        midrange = xpix > midpoint - 5
+        midrange &= xpix < midpoint + 5
     
-    mpinmidrange = np.nanargmin(np.abs(diff)[midrange])
-    midpoint = xpix[midrange][mpinmidrange]
+        mpinmidrange = np.nanargmin(np.abs(diff)[midrange])
+        midpoint = xpix[midrange][mpinmidrange]
+
+        xmax = np.nanargmax(profile)
+        xmin = np.nanargmin(profile)
+
+        if xmax < midpoint and xmin > midpoint :
+            pos_mask = xpix <= midpoint
+            neg_mask = xpix >= midpoint
+        elif xmax > midpoint and xmin < midpoint :
+            neg_mask = xpix <= midpoint
+            pos_mask = xpix >= midpoint
+        else :
+            print("ERROR: ymin={} and ymax={} fall at the same side of profile!".format(xmin, xmax))
+            exit()
+            
+        loc["double_profile"] = True
+    else :
+        pos_mask = profile > 0
+        loc["double_profile"] = False
 
     xmax = np.nanargmax(profile)
     xmin = np.nanargmin(profile)
 
-    if xmax < midpoint and xmin > midpoint :
-        pos_mask = xpix <= midpoint
-        neg_mask = xpix >= midpoint
-    elif xmax > midpoint and xmin < midpoint :
-        neg_mask = xpix <= midpoint
-        pos_mask = xpix >= midpoint
-    else :
-        print("ERROR: ymin={} and ymax={} fall at the same side of profile!".format(xmin, xmax))
-        exit()
-    
     if plot :
         nprofile = profile/np.nanmax(profile)
         plt.plot(np.array([xmin, xmax]), np.array([nprofile[xmin],nprofile[xmax]]), 'o', color='g')
         plt.plot(xpix, nprofile, ':', color='k')
         plt.plot(xpix[pos_mask],nprofile[pos_mask], '--', color='b', label="Positive")
-        plt.plot(xpix[neg_mask],nprofile[neg_mask], '--', color='r', label="Negative")
+        if loc["double_profile"] :
+            plt.plot(xpix[neg_mask],nprofile[neg_mask], '--', color='r', label="Negative")
         plt.legend()
         plt.xlabel("x-coord (pixel)")
         plt.ylabel("normalized flux")
@@ -363,7 +384,8 @@ def get_profile(spec2d_data, plot=False) :
     loc["x"] = xpix
     loc["y"] = profile
     loc["pos_mask"] = pos_mask
-    loc["neg_mask"] = neg_mask
+    if loc["double_profile"] :
+        loc["neg_mask"] = neg_mask
     loc["profile_orders"] = profile_orders
 
     return loc
@@ -450,7 +472,7 @@ def extract_flux(spec2d_data, var2d_data, profile, optimal_extraction=True, posi
 
     norders, nspix = len(spec2d_data), len(spec2d_data[0][0])
 
-    if positive_flux :
+    if positive_flux or not profile["double_profile"] :
         pixmask = profile["pos_mask"]
         mult = 1.
     else :
@@ -560,23 +582,31 @@ def extract_spectrum (efiles, wave, optimal_extraction=True, output="", plot=Fal
 
     # EXTRACT H-Band data
     h_spec2d_data = fits.getdata(efiles["H_SPEC2D"],0)
+    h_nords = len(h_spec2d_data)
+    
     h_var2d_data = fits.getdata(efiles["H_VAR2D"],0)
+    print("Caculating H-band profile from POSITIVE_FLUX={} file {} ... ".format(efiles["POSITIVE_FLUX"],efiles["H_SPEC2D"]))
     h_profile = get_profile(h_spec2d_data, plot=plot)
+    print("Extracting H-band flux data from POSITIVE_FLUX={} file {} ... ".format(efiles["POSITIVE_FLUX"],efiles["H_SPEC2D"]))
     h_flux, h_variance = extract_flux(h_spec2d_data, h_var2d_data, h_profile, optimal_extraction=optimal_extraction, positive_flux=efiles["POSITIVE_FLUX"], plot_fit_profile=False, plot=plot, verbose=verbose)
     
     # EXTRACT K-Band data
     k_spec2d_data = fits.getdata(efiles["K_SPEC2D"],0)
+    k_nords = len(k_spec2d_data)
+
     k_var2d_data = fits.getdata(efiles["K_VAR2D"],0)
+    print("Caculating K-band profile from POSITIVE_FLUX={} file {} ... ".format(efiles["POSITIVE_FLUX"],efiles["K_SPEC2D"]))
     k_profile = get_profile(k_spec2d_data, plot=plot)
+    print("Extracting K-band flux data from POSITIVE_FLUX={} file {} ... ".format(efiles["POSITIVE_FLUX"],efiles["K_SPEC2D"]))
     k_flux, k_variance = extract_flux(k_spec2d_data, k_var2d_data, k_profile, optimal_extraction=optimal_extraction, positive_flux=efiles["POSITIVE_FLUX"], plot_fit_profile=False, plot=plot, verbose=verbose)
 
     flux, variance = [], []
-    for j in range(28) :
-        flux.append(h_flux[27-j])
-        variance.append(h_variance[27-j])
-    for j in range(26) :
-        flux.append(k_flux[25-j])
-        variance.append(k_variance[25-j])
+    for j in range(h_nords) :
+        flux.append(h_flux[h_nords-1-j])
+        variance.append(h_variance[h_nords-1-j])
+    for j in range(k_nords) :
+        flux.append(k_flux[k_nords-1-j])
+        variance.append(k_variance[k_nords-1-j])
 
     flux = np.array(flux, dtype='float')
     variance = np.array(variance, dtype='float')
@@ -612,16 +642,16 @@ def extract_spectrum (efiles, wave, optimal_extraction=True, output="", plot=Fal
         spec_flattened, fitted_continuum= [], []
         a0v_norm, model_teltrans= [], []
         
-        for j in range(28) :
-            spec_flattened.append(h_spec_flattened[27-j])
-            fitted_continuum.append(h_fitted_continuum[27-j])
-            a0v_norm.append(h_a0v_norm[27-j])
-            model_teltrans.append(h_model_teltrans[27-j])
-        for j in range(26) :
-            spec_flattened.append(k_spec_flattened[25-j])
-            fitted_continuum.append(k_fitted_continuum[25-j])
-            a0v_norm.append(k_a0v_norm[25-j])
-            model_teltrans.append(k_model_teltrans[25-j])
+        for j in range(h_nords) :
+            spec_flattened.append(h_spec_flattened[h_nords-1-j])
+            fitted_continuum.append(h_fitted_continuum[h_nords-1-j])
+            a0v_norm.append(h_a0v_norm[h_nords-1-j])
+            model_teltrans.append(h_model_teltrans[h_nords-1-j])
+        for j in range(k_nords) :
+            spec_flattened.append(k_spec_flattened[k_nords-1-j])
+            fitted_continuum.append(k_fitted_continuum[k_nords-1-j])
+            a0v_norm.append(k_a0v_norm[k_nords-1-j])
+            model_teltrans.append(k_model_teltrans[k_nords-1-j])
             
         hdu_spec_flattened = fits.ImageHDU(data=spec_flattened, header=header, name='SPEC_FLATTENED')
         hdu_fitted_continuum = fits.ImageHDU(data=fitted_continuum, header=header, name='FITTED_CONTINUUM')
@@ -649,6 +679,9 @@ def extract_spectra(recipes, reduced_data_dir, raw_data_dir, outdir=".", optimal
 
     extraction_queue = get_reduction_list(recipes, reduced_data_dir, raw_data_dir, outdir, sequence_length=2)
 
+    #for key in extraction_queue.keys() :
+    #    print(key,extraction_queue[key])
+    
     for target in extraction_queue.keys() :
         
         nspectra = len(extraction_queue[target])
@@ -663,12 +696,12 @@ def extract_spectra(recipes, reduced_data_dir, raw_data_dir, outdir=".", optimal
             if os.path.exists(efiles["OUTPUT_EFILE"]) and skip :
                 print("File: {} already exists, skipping ... ".format(efiles["OUTPUT_EFILE"]))
                 continue
+                
             try :
                 spectrum = extract_spectrum(efiles, wave, optimal_extraction=optimal_extraction, plot=False, verbose=False)
             except :
                 print("WARNING: could not extract spectrum, skipping ...")
                 continue
-
 
 #-- end of spirou_ccf routine
 parser = OptionParser()

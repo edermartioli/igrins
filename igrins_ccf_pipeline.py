@@ -12,8 +12,12 @@
     Simple usage example:
     
     python /Volumes/Samsung_T5/Science/IGRINS/igrins_ccf_pipeline.py --input=*e.fits -pv
-    python /Volumes/Samsung_T5/Science/IGRINS/igrins_ccf_pipeline.py --input=SDCHK_20211004_053?e.fits --ccf_mask=/Volumes/Samsung_T5/Science/IGRINS/ccf_masks/montreal_masks/AUMic_neg_depth.mas --object_spectrum=/Volumes/Samsung_T5/SLS-DATA/AUMIC/Template_s1d_AUMIC_sc1d_w_file_AB.fits -pv
+    
+    # Transit of AUMic b
+    python /Volumes/Samsung_T5/Science/IGRINS/igrins_ccf_pipeline.py --input=SDCHK_20210803_*e.fits --ccf_mask=/Volumes/Samsung_T5/Science/IGRINS/ccf_masks/montreal_masks/AUMic_neg_depth.mas --object_spectrum=/Volumes/Samsung_T5/IGRINS-DATA/Template_s1d_AUMIC_sc1d_w_file_AB.fits --output_template=AUMic_b_template.fits -pvt
 
+    $ Transit of AUMic c
+    python /Volumes/Samsung_T5/Science/IGRINS/igrins_ccf_pipeline.py --input=SDCHK_20211004_0_*e.fits --ccf_mask=/Volumes/Samsung_T5/Science/IGRINS/ccf_masks/montreal_masks/AUMic_neg_depth.mas --object_spectrum=/Volumes/Samsung_T5/IGRINS-DATA/Template_s1d_AUMIC_sc1d_w_file_AB.fits --output_template=AUMic_c_template.fits -pvt
     """
 
 __version__ = "1.0"
@@ -29,7 +33,11 @@ import glob
 import reduc_lib
 
 igrins_dir = os.path.dirname(__file__)
+telluric_mask_repository = os.path.join(igrins_dir,'ccf_masks/telluric/')
+h2o_mask = os.path.join(telluric_mask_repository,'trans_h2o_abso_ccf.mas')
+tel_mask = os.path.join(telluric_mask_repository,'trans_others_abso_ccf.mas')
 
+NORDERS = 54
 
 parser = OptionParser()
 parser.add_option("-i", "--input", dest="input", help="Spectral *e.fits data pattern",type='string',default="*e.fits")
@@ -69,7 +77,15 @@ if options.verbose:
     print("Creating list of e.fits spectrum files...")
 inputdata = sorted(glob.glob(options.input))
 
-reduced = reduc_lib.reduce_timeseries_of_spectra(inputdata, options.ccf_mask, object_name=options.object, stellar_spectrum_file=options.object_spectrum, verbose=options.verbose)
+# Initialize drift containers with zeros
+drifts = reduc_lib.get_zero_drift_containers(inputdata)
+
+# Run reduction routines
+reduced = reduc_lib.reduce_timeseries_of_spectra(inputdata, options.ccf_mask, object_name=options.object, stellar_spectrum_file=options.object_spectrum, tel_mask=tel_mask, h2o_mask=h2o_mask, max_gap_size=3.0, convolve_spectra=True, to_resolution=30000, telluric_rv=options.telluric_ccf, verbose=options.verbose)
+
+# Run CCF routines
+reduc_lib.run_igrins_ccf(reduced, options.ccf_mask, drifts, telluric_rv=options.telluric_ccf, normalize_ccfs=True, save_output=True, source_rv=options.source_rv, ccf_width=options.ccf_width, vel_sampling=options.vel_sampling, run_analysis=True, output_template=options.output_template, tel_mask=tel_mask, h2o_mask=h2o_mask, verbose=options.verbose, plot=options.plot)
+
 
 # To implement:
 #       0. Set star template and fit continuum (OK)
@@ -90,8 +106,10 @@ reduced = reduc_lib.reduce_timeseries_of_spectra(inputdata, options.ccf_mask, ob
 ####    B) save telluric subtracted spectra *t.fits style
 ####    C) do science!
 
-### science topics:
-###         - RM effect -- detect the planets
-###         - line variability
-###         - spot crossing, rotation, flares
-###         - exoatmos -- try to detect: H2O, CO2
+### science goals:
+###         - measure RM effect -- detect the planets
+###         - detect line variability
+###         - measure spot crossing, rotation, flares
+###         - detect exo-atmosphere --  H2O, CO2
+
+
