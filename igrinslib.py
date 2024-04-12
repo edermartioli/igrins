@@ -60,33 +60,35 @@ def igrins_order_mask():
              [25, 1780.21, 1797.41,'H'],
              [26, 1797.41, 1814.65,'H'],
              [27, 1814.65, 1825.22,'H'],
-             [28, -1, -1,'K'],
-             [29, 1885.33, 1888.99,'K'],
-             [30, 1891.26, 1909.51,'K'],
-             [31, 1909.51, 1929.77,'K'],
-             [32, 1929.77, 1950.61,'K'],
-             [33, 1950.61, 1971.99,'K'],
-             [34, 1971.99, 1992.87,'K'],
-             [35, 1992.87, 2014.69,'K'],
-             [36, 2014.69, 2037.70,'K'],
-             [37, 2037.70, 2060.72,'K'],
-             [38, 2060.72, 2084.41, 'K'],
-             [39, 2084.41, 2108.41,'K'],
-             [40, 2108.41, 2133.22, 'K'],
-             [41, 2133.22, 2158.49, 'K'],
-             [42, 2158.49, 2184.51, 'K'],
-             [43, 2184.51, 2211.46, 'K'],
-             [44, 2211.46, 2238.60,'K'],
-             [45, 2238.60, 2266.75,'K'],
-             [46, 2266.75, 2295.44,'K'],
-             [47, 2295.44, 2325.01,'K'],
-             [48, 2325.01, 2355.15,'K'],
-             [49, 2355.15, 2386.15,'K'],
-             [50, 2386.15, 2417.93,'K'],
-             [51, 2417.93, 2450.57,'K'],
-             [52, 2451.05, 2480.26,'K'],
-             [53, -1, -1,'K']]
-             
+             [28, 1885.33, 1888.99,'K'],
+             [39, 1891.26, 1909.51,'K'],
+             [30, 1909.51, 1929.77,'K'],
+             [31, 1929.77, 1950.61,'K'],
+             [32, 1950.61, 1971.99,'K'],
+             [33, 1971.99, 1992.87,'K'],
+             [34, 1992.87, 2014.69,'K'],
+             [35, 2014.69, 2037.70,'K'],
+             [36, 2037.70, 2060.72,'K'],
+             [37, 2060.72, 2084.41,'K'],
+             [38, 2084.41, 2108.41,'K'],
+             [39, 2108.41, 2133.22,'K'],
+             [40, 2133.22, 2158.49,'K'],
+             [41, 2158.49, 2184.51,'K'],
+             [42, 2184.51, 2211.46,'K'],
+             [43, 2211.46, 2238.60,'K'],
+             [44, 2238.60, 2266.75,'K'],
+             [45, 2266.75, 2295.44,'K'],
+             [46, 2295.44, 2325.01,'K'],
+             [47, 2325.01, 2355.15,'K'],
+             [48, 2355.15, 2386.15,'K'],
+             [49, 2386.15, 2417.93,'K'],
+             [50, 2417.93, 2450.57,'K'],
+             [51, 2451.05, 2480.26,'K'],
+             [53, -1, -1,'K'],
+             [54, -1, -1,'K'],
+             [55, -1, -1,'K'],
+             [55, -1, -1,'K']]
+
     outorders, wl0, wlf, band = [], [], [], []
     for order in order_mask:
         outorders.append(order[0])
@@ -125,22 +127,46 @@ def load_spectrum(filename, standard=False) :
         spectrum["A0V_NORM"] = deepcopy(hdu["A0V_NORM"].data)
         spectrum["MODEL_TELTRANS"] = deepcopy(hdu["MODEL_TELTRANS"].data)
 
-    for order in range(norders) :
+
+    entered_Kband = False
+    skipped = 0
     
+    for order in range(norders) :
+
+        if orders['band'][order] == 'K' :
+            entered_Kband = True
+        
         wl0, wlf = orders['wl0'][order], orders['wlf'][order]
         
-        mask = spectrum["wl"][order] >= wl0
-        mask &= spectrum["wl"][order] < wlf
+        obs_order = order + skipped
 
-        spectrum["flux"][order][~mask] = np.nan
-        spectrum["variance"][order][~mask] = np.nan
-    
+        if obs_order >= len(spectrum["wl"]) :
+            continue
+
+        #print(orders['band'][order], order, obs_order, wl0, wlf, spectrum["wl"][obs_order][0], spectrum["wl"][obs_order][-1])
+
+        if entered_Kband and spectrum["wl"][obs_order][0] < 1850 :
+            skipped += 1
+            continue
+
+        mask = spectrum["wl"][obs_order] >= wl0
+        mask &= spectrum["wl"][obs_order] < wlf
+
+        #plt.plot(spectrum["wl"][obs_order],spectrum["flux"][obs_order],".", color="grey", alpha=0.3)
+
+        spectrum["flux"][obs_order][~mask] = np.nan
+        spectrum["variance"][obs_order][~mask] = np.nan
+        
+        #plt.plot(spectrum["wl"][obs_order][mask] ,spectrum["flux"][obs_order][mask],"-")
+
         if standard :
-            spectrum["SPEC_FLATTENED"][order][~mask] = np.nan
-            spectrum["FITTED_CONTINUUM"][order][~mask] = np.nan
-            spectrum["A0V_NORM"][order][~mask] = np.nan
-            spectrum["MODEL_TELTRANS"][order][~mask] = np.nan
+            spectrum["SPEC_FLATTENED"][obs_order][~mask] = np.nan
+            spectrum["FITTED_CONTINUUM"][obs_order][~mask] = np.nan
+            spectrum["A0V_NORM"][obs_order][~mask] = np.nan
+            spectrum["MODEL_TELTRANS"][obs_order][~mask] = np.nan
             
+    #plt.show()
+    #exit()
     hdu.close()
     return spectrum
 
